@@ -1,0 +1,36 @@
+
+#===============================#
+# zfs-space-check configuration #
+#===============================#
+
+# sbin directory location
+$sbinDir   = "/sbin";
+
+# zfs get command with options
+$zfsGetCmd = "zfs get -Hp -o value refquota,available";
+
+# db to keep available space percentage of zfs components after warning.
+$DB_File   = "/var/db/zfs-space-check/notified.db";
+
+#    zfs_component (zpool,zfs) => {
+#        threshold  => warning threshold (% of available space), numeric
+#        step       => %, numeric
+#            Warn in available space drops below ( last warning value - $step % )
+#            and silently reset last warning value to current if space grows up to $step %.
+#        listCmd    => zpool or zfs list command with options, string
+#    },
+
+%Conf = (
+    zpool => {
+        threshold => 50,
+        step      =>  5,
+        listCmd   => "zpool list -H -o name,size,free,capacity",
+    },
+    zfs => {
+        threshold => 99,
+        step      =>  5,
+        listCmd   => "zfs list -H -o name,refquota,available",
+    },
+);
+
+__END__

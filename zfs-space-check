@@ -1,0 +1,234 @@
+#!/usr/bin/env perl
+
+#========================================================================
+# zfs-space-check
+#========================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Pod::Usage;
+use DB_File;
+
+our $opt_c = "/usr/local/etc/zfs-space-check.conf";
+
+my %ValidRE = (
+    zpool => qr/^([-_:.A-z0-9]+)\t([.,A-z0-9]+)\t([.,A-z0-9]+)\t([0-9]{1,3})%$/,
+    zfs   => qr|^([-_:./A-z0-9]+)\t([-.,A-z0-9]+)\t([-.,A-z0-9]+)$|,
+);
+
+our ( $opt_a, $opt_help, $opt_man );
+
+# Values are defined in the configuration file
+our ( $sbinDir, $zfsGetCmd, $DB_File, %Conf );
+
+GetOptions( "c=s", "a", "help|?", "man" ) || pod2usage(2);
+pod2usage( -exitstatus => 0, -verbose => 2 ) if $opt_man;
+pod2usage(1) if $opt_help;
+
+&ConfigDataRead($opt_c);
+
+tie my %notified, 'DB_File', $DB_File
+  or die "cannot open DBM " . $DB_File . ": $!";
+
+&GetList('zpool');
+&GetList('zfs');
+
+exit 0;
+
+sub GetList {
+
+    my ($zfsComp) = @_;
+
+    unless ( ( $zfsComp eq 'zpool' ) || ( $zfsComp eq 'zfs' ) ) {
+        warn "Unknown ZFS component type: $zfsComp\n";
+        return;
+    }
+
+    my ( $percAvail, $msg );
+
+    open( LIST, "-|", "$sbinDir/$Conf{$zfsComp}{listCmd}" )
+      or die "cannot execute $Conf{$zfsComp}{listCmd} : $!";
+
+    while (<LIST>) {
+
+        if ( $_ !~ $ValidRE{$zfsComp} ) {
+            warn "Unexpected $zfsComp list command output: $_\n";
+            next;
+        }
+
+        if ( $zfsComp eq 'zpool' ) {
+            $percAvail = 100 - $4;
+        }
+        else {
+            next if ( $2 eq "none" || $2 eq "-" );    # skip unlimited
+            $percAvail = &ChkQuota($1);
+        }
+
+        if (
+            &ChkThreshold(
+                $1,                         $percAvail,
+                $Conf{$zfsComp}{threshold}, $Conf{$zfsComp}{step}
+            )
+          )
+        {
+            if ( $zfsComp eq 'zpool' ) {
+                $msg = 'pool size available, running on low space';
+            }
+            else {
+                $msg = 'file system refquota available';
+            }
+            print "$1\t$percAvail% ($3/$2)  of $msg\n";
+        }
+
+    }
+
+    close(LIST)
+      || warn "close failed: $!";
+}
+
+sub ChkThreshold {
+    my ( $zfsComp, $percAvail, $threshold, $step ) = @_;
+
+    if ( $percAvail <= $threshold ) {
+        if (
+               $opt_a
+            || !exists $notified{$zfsComp}
+            || ( $percAvail < ( $notified{$zfsComp} - $step ) )
+
+            # warn when crossing 1% threshold
+            || ( ( $percAvail < 1 ) && ( $notified{$zfsComp} > 1 ) )
+          )
+        {
+            $notified{$zfsComp} = $percAvail;
+            return 1;
+        }
+        elsif ( $percAvail > ( $notified{$zfsComp} + $step ) ) {
+            $notified{$zfsComp} = $percAvail;
+        }
+    }
+    elsif ( exists $notified{$zfsComp} ) {
+        delete $notified{$zfsComp};
+    }
+    return 0;
+}
+
+sub ChkQuota {
+    open( ZFSGET, "-|", "$sbinDir/$zfsGetCmd @_" )
+      or die "cannot execute $zfsGetCmd : $!";
+    chomp( my ( $refquota, $available ) = <ZFSGET> );
+    close(ZFSGET)
+      || warn "close failed: $!";
+
+    unless ( ( $refquota =~ /^(\d+)$/ )
+        && ( $available =~ /^(\d+)$/ ) )
+    {
+        warn "Unexpected zfs get command output: $_\n";
+        return -1;
+    }
+
+    return int( 100 * $available / $refquota );
+}
+
+sub ConfigDataRead {
+    unless ( my $ret = do "@_" ) {
+        warn "Couldn't execute @_: $@" if $@;
+        warn "Couldn't open @_: $!"    if $!;
+        die;
+    }
+}
+
+__END__
+
+=head1 NAME
+
+zfs-space-check - low space alerting tool for ZFS
+
+=head1 SYNOPSIS
+
+B<zfs-space-check [-a] [-c configfile]>
+
+B<zfs-space-check -help|-man>
+
+ Options:
+       -c               configuration file name
+       -a               always list low space ZFS components
+       -help            brief help message
+       -man             full documentation
+
+=head1 DESCRIPTION
+
+zfs-space-check(1) prints notifications on STDOUT when free space of ZFS
+components (pools, file systems) drops below configured thresholds.
+
+To reduce noise the program caches ZFS components state. Each time warning is
+generated, remaining space percentages of out of space components are
+permanently cached in the DBM file. Then the program provides no output any more
+while free space lies within bounds of (cached value - preconfigured step).
+If available space drops below (cached value - step) the program throws a warning
+to the STDOUT and updates the database. If free space grows up to
+(cached value + step), the program updates the database silently.
+
+This program also warns every time remaining space crosses 1% threshold.
+
+Program output also includes a list of ZFS components that currently are out of
+space. Optionally this list may be printed independently of space changes.
+
+=head1 OPTIONS
+
+=over
+
+=item  B<-a>
+
+Always list low space ZFS components. Default: only when space change occurs.
+
+=item  B<-c> configfile
+
+Configuration file. Default: /usr/local/etc/zfs-space-check.conf
+
+=item B<--help>
+
+Brief help.
+
+=item B<--man>
+
+Full documentation.
+
+=back
+
+=head1 REQUIREMENTS
+
+=over
+
+=item *
+
+A Linux, Solaris or Unix based server with ZFS file system.
+
+=item *
+
+Perl version 5.8.0 or later.
+
+=back
+
+=head1 EXAMPLES
+
+Cron jobs to get notifications in mailbox:
+
+ # Send report every morning
+ 15  8  *  *  *    /usr/local/bin/perl /usr/local/bin/zfs-space-check -a | mail -Es "zfs-space-check@`hostname` `date '+\%Y-\%m-\%d \%H:\%M'` daily report" root
+ # Perform check every 15 minutes and send alert only if available space has changed
+ */15  *  *  *  *  /usr/local/bin/perl /usr/local/bin/zfs-space-check | mail -Es "zfs-space-check@`hostname` `date '+\%Y-\%m-\%d \%H:\%M'` available space warning" root
+
+=head1 AUTHOR
+
+S<Alexander Moisseev E<lt>moiseev@mezonplus.ruE<gt>>
+
+=head1 LICENSE and COPYRIGHT
+
+ Copyright (c) 2016, Alexander Moisseev
+ All rights reserved.
+
+ This program is licensed under the terms of the Simplified BSD License.
+
+=cut
