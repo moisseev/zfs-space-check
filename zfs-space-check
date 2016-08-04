@@ -51,6 +51,16 @@ sub GetList {
     open( LIST, "-|", "$sbinDir/$Conf{$zfsComp}{listCmd}" )
       or die "cannot execute $Conf{$zfsComp}{listCmd} : $!";
 
+    if ( fileno LIST ) {
+        if ( $zfsComp eq 'zpool' ) {
+            print "No pools available\n";
+        }
+        else {
+            print "No datasets available\n";
+        }
+        exit 0;
+    }
+
     while (<LIST>) {
 
         if ( $_ !~ $ValidRE{$zfsComp} ) {
