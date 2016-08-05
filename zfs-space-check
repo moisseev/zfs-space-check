@@ -7,16 +7,30 @@
 use strict;
 use warnings;
 
+use POSIX qw( getuid getgid setuid setgid );
 use Getopt::Long;
 use Pod::Usage;
 use DB_File;
 
 our $opt_c = "/usr/local/etc/zfs-space-check.conf";
+my $user = "nobody";
 
 my %ValidRE = (
     zpool => qr/^([-_:.A-z0-9]+)\t([.,A-z0-9]+)\t([.,A-z0-9]+)\t([0-9]{1,3})%$/,
     zfs   => qr|^([-_:./A-z0-9]+)\t([-.,A-z0-9]+)\t([-.,A-z0-9]+)$|,
 );
+
+# Set UID/GID
+my ( undef, undef, $UID, $GID ) = getpwnam($user);
+defined $UID
+  or die "user $user does not exist";
+setuid($UID) if ( getuid() != $UID );
+setgid($GID) if ( getgid() != $GID );
+
+# Verify we are running as the correct user
+die "Wrong user: my userid is $>, instead of $UID ($user).
+Please su [-m] $user first.\n"
+  if ( $> != $UID );
 
 our ( $opt_a, $opt_help, $opt_man );
 
@@ -185,6 +199,10 @@ This program also warns every time remaining space crosses 1% threshold.
 Program output also includes a list of ZFS components that currently are out of
 space. Optionally this list may be printed independently of space changes.
 
+This program is intended to run with limited privileges as a nobody user. It can
+be started as a nobody or root user. Once started as a root user it attempts to
+drop privileges to nobody.
+
 =head1 OPTIONS
 
 =over
@@ -226,9 +244,9 @@ Perl version 5.8.0 or later.
 Cron jobs to get notifications in mailbox:
 
  # Send report every morning
- 15  8  *  *  *    /usr/local/bin/perl /usr/local/bin/zfs-space-check -a | mail -Es "zfs-space-check@`hostname` `date '+\%Y-\%m-\%d \%H:\%M'` daily report" root
+ 15  8  *  *  *    su -m nobody -c "/usr/local/bin/perl /usr/local/bin/zfs-space-check -a" | mail -Es "zfs-space-check@`hostname` `date '+\%Y-\%m-\%d \%H:\%M'` daily report" root
  # Perform check every 15 minutes and send alert only if available space has changed
- */15  *  *  *  *  /usr/local/bin/perl /usr/local/bin/zfs-space-check | mail -Es "zfs-space-check@`hostname` `date '+\%Y-\%m-\%d \%H:\%M'` available space warning" root
+ */15  *  *  *  *  su -m nobody -c "/usr/local/bin/perl /usr/local/bin/zfs-space-check" | mail -Es "zfs-space-check@`hostname` `date '+\%Y-\%m-\%d \%H:\%M'` available space warning" root
 
 =head1 AUTHOR
 
