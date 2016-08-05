@@ -65,7 +65,7 @@ sub GetList {
     open( LIST, "-|", "$sbinDir/$Conf{$zfsComp}{listCmd}" )
       or die "cannot execute $Conf{$zfsComp}{listCmd} : $!";
 
-    if ( fileno LIST ) {
+    unless ( defined <LIST> ) {
         if ( $zfsComp eq 'zpool' ) {
             print "No pools available\n";
         }
