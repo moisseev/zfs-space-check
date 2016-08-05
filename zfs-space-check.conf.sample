@@ -27,7 +27,7 @@ $DB_File   = "/var/db/zfs-space-check/notified.db";
         listCmd   => "zpool list -H -o name,size,free,capacity",
     },
     zfs => {
-        threshold => 99,
+        threshold => 20,
         step      =>  5,
         listCmd   => "zfs list -H -o name,refquota,available",
     },
