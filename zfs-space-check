@@ -35,7 +35,7 @@ Please su [-m] $user first.\n"
 our ( $opt_a, $opt_help, $opt_man );
 
 # Values are defined in the configuration file
-our ( $sbinDir, $zfsGetCmd, $DB_File, %Conf );
+our ( $sbinDir, $DB_File, %Conf );
 
 GetOptions( "c=s", "a", "help|?", "man" ) || pod2usage(2);
 pod2usage( -exitstatus => 0, -verbose => 2 ) if $opt_man;
@@ -52,7 +52,6 @@ tie my %notified, 'DB_File', $DB_File
 exit 0;
 
 sub GetList {
-
     my ($zfsComp) = @_;
 
     unless ( ( $zfsComp eq 'zpool' ) || ( $zfsComp eq 'zfs' ) ) {
@@ -60,12 +59,16 @@ sub GetList {
         return;
     }
 
-    my ( $percAvail, $msg );
+    my ( $percAvail, $available, $limit, $limit_type, $msg );
 
-    open( LIST, "-|", "$sbinDir/$Conf{$zfsComp}{listCmd}" )
-      or die "cannot execute $Conf{$zfsComp}{listCmd} : $!";
+    my %zfsListCmd = (
+        zfs   => "zfs list -H -o name,refquota,available",
+        zpool => "zpool list -H -o name,size,free,capacity",
+    );
+    open( my $LIST, "-|", "$sbinDir/$zfsListCmd{$zfsComp}" )
+      or die "cannot execute $zfsListCmd{$zfsComp} : $!";
 
-    unless ( defined <LIST> ) {
+    unless ( defined <$LIST> ) {
         if ( $zfsComp eq 'zpool' ) {
             print "No pools available\n";
         }
@@ -75,7 +78,7 @@ sub GetList {
         exit 0;
     }
 
-    while (<LIST>) {
+    while (<$LIST>) {
 
         if ( $_ !~ $ValidRE{$zfsComp} ) {
             warn "Unexpected $zfsComp list command output: $_\n";
@@ -84,31 +87,26 @@ sub GetList {
 
         if ( $zfsComp eq 'zpool' ) {
             $percAvail = 100 - $4;
+            $available = $3;
+            $limit     = $2;
         }
         else {
-            next if ( $2 eq "none" || $2 eq "-" );    # skip unlimited
-            $percAvail = &ChkQuota($1);
+            ( $percAvail, $available, $limit, $limit_type ) = &ChkQuota($1);
         }
 
-        if (
-            &ChkThreshold(
-                $1,                         $percAvail,
-                $Conf{$zfsComp}{threshold}, $Conf{$zfsComp}{step}
-            )
-          )
-        {
+        if ( &ChkThreshold( $1, $percAvail, $Conf{$zfsComp}{threshold}, $Conf{$zfsComp}{step} ) ) {
             if ( $zfsComp eq 'zpool' ) {
                 $msg = 'pool size available, running on low space';
             }
             else {
-                $msg = 'file system refquota available';
+                $msg = "file system $limit_type available";
             }
-            print "$1\t$percAvail% ($3/$2)  of $msg\n";
+            print "$1\t$percAvail% ($available/$limit)  of $msg\n";
         }
 
     }
 
-    close(LIST)
+    close($LIST)
       || warn "close failed: $!";
 }
 
@@ -139,20 +137,43 @@ sub ChkThreshold {
 }
 
 sub ChkQuota {
-    open( ZFSGET, "-|", "$sbinDir/$zfsGetCmd @_" )
-      or die "cannot execute $zfsGetCmd : $!";
-    chomp( my ( $refquota, $available ) = <ZFSGET> );
-    close(ZFSGET)
-      || warn "close failed: $!";
+    my $dataset = shift;
+    my $err;
 
-    unless ( ( $refquota =~ /^(\d+)$/ )
-        && ( $available =~ /^(\d+)$/ ) )
-    {
-        warn "Unexpected zfs get command output: $_\n";
-        return -1;
+    my %p;    # Parsable values
+    my %h;    # Human readable values
+
+    my %zfsGetCmd = (
+        h => "zfs get -H -o value available,quota,refquota,used",
+        p => "zfs get -Hp -o value available,quota,refquota,used",
+    );
+
+    my @p = &zfsGet( $zfsGetCmd{p}, $dataset );
+    foreach (@p) {
+        unless (/^(\d+)$/) {
+            warn "Unexpected `zfs get` command output: ", join( ',', @p ), "\n";
+            $err = 1;
+            last;
+        }
     }
+    ( $p{available}, $p{quota}, $p{refquota}, $p{used} ) = @p;
+    ( $h{available}, $h{quota}, $h{refquota}, $h{used} ) = &zfsGet( $zfsGetCmd{h}, $dataset );
 
-    return int( 100 * $available / $refquota );
+    my $limit_type;
+    if ( $p{refquota} ) {
+        $limit_type = "refquota";
+    }
+    elsif ( $p{quota} ) {
+        $limit_type = "quota";
+    }
+    else {
+        # Limited by pool size, reservation of another dataset or quota of the parent dataset.
+        $limit_type = "space";
+        $h{space}   = "($h{available} available + $h{used} used)";
+        $p{space}   = $p{available} + $p{used};
+    }
+    my $percAvail = $err ? -1 : int( 100 * $p{available} / $p{$limit_type} );
+    return ( $percAvail, $h{available}, $h{$limit_type}, $limit_type );
 }
 
 sub ConfigDataRead {
@@ -161,6 +182,16 @@ sub ConfigDataRead {
         warn "Couldn't open @_: $!"    if $!;
         die;
     }
+}
+
+sub zfsGet {
+    my ( $cmd, $dataset ) = @_;
+    open( my $ZFSGET, "-|", "$sbinDir/$cmd $dataset" )
+      or die "cannot execute $cmd : $!";
+    chomp( my @result = <$ZFSGET> );
+    close($ZFSGET)
+      || warn "close failed: $!";
+    return @result;
 }
 
 __END__
