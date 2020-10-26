@@ -1,0 +1,31 @@
+; Run "tidyall -a" to process all files.
+; Run "tidyall -g" to process all added or modified files in the current git working directory.
+
+[PerlCritic]
+select = **/*.{pl,pm,t}
+select = zfs-space-check
+select = zfs-space-check.conf.sample
+
+[PerlTidy]
+select = **/*.{pl,pm,t}
+select = zfs-space-check
+select = zfs-space-check.conf.sample
+argv = -l=120
+
+[PodChecker]
+select = **/*.{pl,pm,pod}
+select = zfs-space-check
+
+;[PodSpell]
+;select = **/*.{pl,pm,pod}
+;select = zfs-space-check
+;argv = aspell --lang=en list
+
+[PodTidy]
+select = **/*.{pl,pm,pod}
+select = zfs-space-check
+
+[Test::Vars]
+select = **/*.{pl,pm,t}
+select = zfs-space-check
+select = zfs-space-check.conf.sample

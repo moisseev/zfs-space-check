@@ -3,6 +3,8 @@
 # zfs-space-check configuration #
 #===============================#
 
+## no critic (RequireUseStrict)
+
 # sbin directory location
 $sbinDir = "/sbin";
 
