@@ -10,20 +10,29 @@ $sbinDir = "/sbin";
 $DB_File = "/var/db/zfs-space-check/notified.db";
 
 #    zfs_component (zpool,zfs) => {
-#        threshold  => warning threshold (% of available space), numeric
-#        step       => %, numeric
+#        crit => Bytes available, critical threshold, numeric
+#        warn => Bytes available, warning threshold, numeric
+#        percCrit  => % of available space, critical threshold, numeric
+#        percWarn  => % of available space, warning threshold, numeric
+#        step      => %, numeric
 #            Warn if available space drops below ( last warning value - $step % )
-#            and silently reset last warning value to current if space grows up to $step %.
+#            and silently reset the last warning value to the current value if space grows up to $step %.
 #    },
 
 %Conf = (
     zpool => {
-        threshold => 50,
-        step      => 5,
+        crit     => 10 * 1024**3,     # 10 GB
+        warn     => 400 * 1024**3,    # 400GB
+        percCrit => 1,
+        percWarn => 50,
+        step     => 5,
     },
     zfs => {
-        threshold => 20,
-        step      => 5,
+        crit     => 100 * 1024**2,    # 100 MB
+        warn     => 1024**3,          # 1GB
+        percCrit => 1,
+        percWarn => 20,
+        step     => 5,
     },
 );
 

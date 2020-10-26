@@ -59,7 +59,7 @@ sub GetList {
         return;
     }
 
-    my ( $percAvail, $available, $limit, $limit_type, $msg );
+    my ( $percAvail, $p_available, $available, $limit, $limit_type, $msg );
 
     my %zfsListCmd = (
         zfs   => "zfs list -H -o name,refquota,available",
@@ -86,15 +86,27 @@ sub GetList {
         }
 
         if ( $zfsComp eq 'zpool' ) {
-            $percAvail = 100 - $4;
+            $percAvail   = 100 - $4;
+            $p_available = `$sbinDir/zpool get -Hp -o value free $1`;
+            if ( $p_available !~ /^\d+$/ ) {
+                warn "Unexpected zpool get command output: $p_available\n";
+                next;
+            }
             $available = $3;
             $limit     = $2;
         }
         else {
-            ( $percAvail, $available, $limit, $limit_type ) = &ChkQuota($1);
+            ( $percAvail, $p_available, $available, $limit, $limit_type ) = &ChkQuota($1);
         }
 
-        if ( &ChkThreshold( $1, $percAvail, $Conf{$zfsComp}{threshold}, $Conf{$zfsComp}{step} ) ) {
+        if (
+            &ChkThreshold(
+                $1,                        $percAvail,            $p_available,
+                $Conf{$zfsComp}{crit},     $Conf{$zfsComp}{warn}, $Conf{$zfsComp}{percCrit},
+                $Conf{$zfsComp}{percWarn}, $Conf{$zfsComp}{step}
+            )
+          )
+        {
             if ( $zfsComp eq 'zpool' ) {
                 $msg = 'pool size available, running on low space';
             }
@@ -111,16 +123,16 @@ sub GetList {
 }
 
 sub ChkThreshold {
-    my ( $zfsComp, $percAvail, $threshold, $step ) = @_;
+    my ( $zfsComp, $percAvail, $p_available, $crit, $warn, $percCrit, $percWarn, $step ) = @_;
 
-    if ( $percAvail <= $threshold ) {
+    if ( $p_available <= $crit || ( $p_available <= $warn && $percAvail <= $percWarn ) ) {
         if (
                $opt_a
             || !exists $notified{$zfsComp}
             || ( $percAvail < ( $notified{$zfsComp} - $step ) )
 
-            # warn when crossing 1% threshold
-            || ( ( $percAvail < 1 ) && ( $notified{$zfsComp} > 1 ) )
+            # warn when crossing critical % threshold
+            || ( ( $percAvail < $percCrit ) && ( $notified{$zfsComp} > 1 ) )
           )
         {
             $notified{$zfsComp} = $percAvail;
@@ -173,7 +185,7 @@ sub ChkQuota {
         $p{space}   = $p{available} + $p{used};
     }
     my $percAvail = $err ? -1 : int( 100 * $p{available} / $p{$limit_type} );
-    return ( $percAvail, $h{available}, $h{$limit_type}, $limit_type );
+    return ( $percAvail, $p{available}, $h{available}, $h{$limit_type}, $limit_type );
 }
 
 sub ConfigDataRead {
@@ -217,22 +229,26 @@ B<zfs-space-check -help|-man>
 zfs-space-check(1) prints notifications on STDOUT when free space of ZFS
 components (pools, file systems) drops below configured thresholds.
 
-To reduce noise the program caches ZFS components state. Each time warning is
-generated, remaining space percentages of out of space components are
-permanently cached in the DBM file. Then the program provides no output any more
-while free space lies within bounds of (cached value - preconfigured step).
-If available space drops below (cached value - step) the program throws a warning
-to the STDOUT and updates the database. If free space grows up to
-(cached value + step), the program updates the database silently.
+The program throws a warning when available space falls below both byte AND
+percent thresholds at the same time.
 
-This program also warns every time remaining space crosses 1% threshold.
+To reduce noise the program caches ZFS components state. Each time warning is
+generated, remaining space percentages of out-of-space components are
+permanently cached in the DBM file. Then the program provides no output anymore
+while available space lies within bounds of (cached value - preconfigured
+step). If available space drops below (cached value - step) the program throws
+a warning to the STDOUT and updates the database. If available space grows up
+to (cached value + step), the program updates the database silently.
+
+This program also warns every time remaining space crosses any of the critical
+thresholds (byte or percent).
 
 Program output also includes a list of ZFS components that currently are out of
 space. Optionally this list may be printed independently of space changes.
 
-This program is intended to run with limited privileges as a nobody user. It can
-be started as a nobody or root user. Once started as a root user it attempts to
-drop privileges to nobody.
+This program is intended to run with limited privileges as a nobody user. It
+can be started as a nobody or root user. Once started as a root user it
+attempts to drop privileges to nobody.
 
 =head1 OPTIONS
 
