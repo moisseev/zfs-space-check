@@ -101,9 +101,14 @@ sub GetList {
 
         if (
             &ChkThreshold(
-                $1,                        $percAvail,            $p_available,
-                $Conf{$zfsComp}{crit},     $Conf{$zfsComp}{warn}, $Conf{$zfsComp}{percCrit},
-                $Conf{$zfsComp}{percWarn}, $Conf{$zfsComp}{step}
+                $1,
+                $percAvail,
+                $p_available,
+                $Conf{$zfsComp}{comp}{$1}{crit}     // $Conf{$zfsComp}{crit},
+                $Conf{$zfsComp}{comp}{$1}{warn}     // $Conf{$zfsComp}{warn},
+                $Conf{$zfsComp}{comp}{$1}{percCrit} // $Conf{$zfsComp}{percCrit},
+                $Conf{$zfsComp}{comp}{$1}{percWarn} // $Conf{$zfsComp}{percWarn},
+                $Conf{$zfsComp}{comp}{$1}{step}     // $Conf{$zfsComp}{step}
             )
           )
         {

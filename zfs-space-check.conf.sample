@@ -19,6 +19,13 @@ $DB_File = "/var/db/zfs-space-check/notified.db";
 #        step      => %, numeric
 #            Warn if available space drops below ( last warning value - $step % )
 #            and silently reset the last warning value to the current value if space grows up to $step %.
+
+#            # Specific ZFS components overrides
+#            comp => {
+#                'zfs_component (pool or file sysytem)' => {
+#                    parameter => value,
+#                },
+#            },
 #    },
 
 %Conf = (
@@ -28,6 +35,12 @@ $DB_File = "/var/db/zfs-space-check/notified.db";
         percCrit => 1,
         percWarn => 50,
         step     => 5,
+
+        # comp => {
+        #     zroot => {
+        #         percWarn => 40,
+        #     },
+        # },
     },
     zfs => {
         crit     => 100 * 1024**2,    # 100 MB
@@ -35,6 +48,12 @@ $DB_File = "/var/db/zfs-space-check/notified.db";
         percCrit => 1,
         percWarn => 20,
         step     => 5,
+
+        # comp => {
+        #     'zroot/tmp' => {
+        #         crit => 90 * 1024**2,   # 90 MB
+        #     },
+        # },
     },
 );
 
