@@ -102,6 +102,7 @@ sub GetList {
 
         if (
             &ChkThreshold(
+                $zfsComp,
                 $1,
                 $percAvail,
                 $p_available,
@@ -129,27 +130,28 @@ sub GetList {
 }
 
 sub ChkThreshold {
-    my ( $zfsComp, $percAvail, $p_available, $crit, $warn, $percCrit, $percWarn, $step ) = @_;
+    my ( $zfsComp, $name, $percAvail, $p_available, $crit, $warn, $percCrit, $percWarn, $step ) = @_;
+    my $key = $zfsComp . "%" . $name;
 
     if ( $p_available <= $crit || ( $p_available <= $warn && $percAvail <= $percWarn ) ) {
         if (
                $opt_a
-            || !exists $notified{$zfsComp}
-            || ( $percAvail < ( $notified{$zfsComp} - $step ) )
+            || !exists $notified{$key}
+            || ( $percAvail < ( $notified{$key} - $step ) )
 
             # warn when crossing critical % threshold
-            || ( ( $percAvail < $percCrit ) && ( $notified{$zfsComp} > 1 ) )
+            || ( ( $percAvail < $percCrit ) && ( $notified{$key} > 1 ) )
           )
         {
-            $notified{$zfsComp} = $percAvail;
+            $notified{$key} = $percAvail;
             return 1;
         }
-        elsif ( $percAvail > ( $notified{$zfsComp} + $step ) ) {
-            $notified{$zfsComp} = $percAvail;
+        elsif ( $percAvail > ( $notified{$key} + $step ) ) {
+            $notified{$key} = $percAvail;
         }
     }
-    elsif ( exists $notified{$zfsComp} ) {
-        delete $notified{$zfsComp};
+    elsif ( exists $notified{$key} ) {
+        delete $notified{$key};
     }
     return 0;
 }
