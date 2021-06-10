@@ -90,6 +90,7 @@ sub GetList {
             $available   = $3;
             $limit       = $2;
             $p_available = `$sbinDir/zpool get -Hp -o value free $1`;
+            chomp($p_available);
             if ( $p_available !~ /^\d+$/ ) {
                 warn "Unexpected zpool get command output: $p_available\n";
                 next;
